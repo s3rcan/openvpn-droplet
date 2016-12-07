@@ -8,12 +8,28 @@
 # links: http://www.serveradventures.com/the-adventures/setting-up-your-own-cloud-vpn-server-in-under-30-minutes
 ################################################################################################################
 
+# define number of client certificates for totally automated script
+certqty=''
+
+# check if certificate quantity was already specified, otherwise specify it
+if [ -z "$certqty" ];
+  then
+    read -p "How many client certificates will you need?: " certqty
+    if ! [[ "$certqty" =~ ^[0-9]+$ ]];
+      then
+        echo '===================================================='
+        echo 'Certificate quantity must be an integer. Exiting...'
+        echo '===================================================='
+      exit
+    fi
+fi
+
 # determine OS 
 dist=$(lsb_release -si)
 ver=$(lsb_release -sr | cut -d. -f1)  
 
 # check if Ubuntu 14+ or Debian 8+
-if ([ $dist == 'Ubuntu' ] && ( [ $ver == '14' ] || [ $ver == '15' ] )) || ( [ $dist == 'Debian' ] && [ $ver == '8' ] )
+if ([ $dist == 'Ubuntu' ] && ( [ $ver == '14' ] || [ $ver == '15' ] || [ $ver = '16' ] )) || ( [ $dist == 'Debian' ] && [ $ver == '8' ] )
 then
   # detected compatible operating system
   echo '===================================================='
@@ -107,63 +123,75 @@ then
   # start openvpn service
   service openvpn start
 
-  # build client certificates
-  cd /etc/openvpn/easy-rsa
-  ./build-key --batch client1
-
-  # create ovpn config file from template
-  cp /usr/share/doc/openvpn/examples/sample-config-files/client.conf /etc/openvpn/easy-rsa/keys/client1.ovpn
-
   # define IP address of server
   ip=$(ip addr | grep 'state UP' -A2 | tail -n1 | awk '{print $2}' | cut -f1  -d'/')
+  
+  # loop to generate client certificates (based on $certqty)
+  i=1
+  while [ $i -le $certqty ]; do
+  
+    # define $client variable with iteration of certificate
+    client=client$i
+    
+    # build client certificates
+    cd /etc/openvpn/easy-rsa
+    ./build-key --batch $client
 
-  # replace my-server-1 in client1.ovpn to server IP address
-  sed -i -e "s/my-server-1/${ip}/g" /etc/openvpn/easy-rsa/keys/client1.ovpn
+    # create ovpn config file from template
+    cp /usr/share/doc/openvpn/examples/sample-config-files/client.conf /etc/openvpn/easy-rsa/keys/$client.ovpn
 
-  #uncomment 'user nobody' and 'group nogroup' from client1.ovpn
-  sed -i -e 's/#user nobody/user nobody/g' /etc/openvpn/easy-rsa/keys/client1.ovpn
-  sed -i -e 's/#group nogroup/group nogroup/g' /etc/openvpn/easy-rsa/keys/client1.ovpn
+    # replace my-server-1 in client1.ovpn to server IP address
+    sed -i -e "s/my-server-1/${ip}/g" /etc/openvpn/easy-rsa/keys/$client.ovpn
 
-  # recomment ca.crt, client.crt, and client.key
-  sed -i -e 's/ca ca.crt/#ca ca.crt/g' /etc/openvpn/easy-rsa/keys/client1.ovpn
-  sed -i -e 's/cert client.crt/#cert client.crt/g' /etc/openvpn/easy-rsa/keys/client1.ovpn
-  sed -i -e 's/key client.key/#key client.key/g' /etc/openvpn/easy-rsa/keys/client1.ovpn
+    #uncomment 'user nobody' and 'group nogroup' from client1.ovpn
+    sed -i -e 's/#user nobody/user nobody/g' /etc/openvpn/easy-rsa/keys/$client.ovpn
+    sed -i -e 's/#group nogroup/group nogroup/g' /etc/openvpn/easy-rsa/keys/$client.ovpn
 
-  # paste actual certificates into client1.ovpn
-  echo '<ca>' >> /etc/openvpn/easy-rsa/keys/client1.ovpn
-  cat /etc/openvpn/ca.crt >> /etc/openvpn/easy-rsa/keys/client1.ovpn
-  echo '</ca>' >> /etc/openvpn/easy-rsa/keys/client1.ovpn
-  echo '<cert>' >> /etc/openvpn/easy-rsa/keys/client1.ovpn
-  cat /etc/openvpn/easy-rsa/keys/client1.crt >> /etc/openvpn/easy-rsa/keys/client1.ovpn
-  echo '</cert>' >> /etc/openvpn/easy-rsa/keys/client1.ovpn
-  echo '<key>' >> /etc/openvpn/easy-rsa/keys/client1.ovpn
-  cat /etc/openvpn/easy-rsa/keys/client1.key >> /etc/openvpn/easy-rsa/keys/client1.ovpn
-  echo '</key>' >> /etc/openvpn/easy-rsa/keys/client1.ovpn
+    # recomment ca.crt, client.crt, and client.key
+    sed -i -e 's/ca ca.crt/#ca ca.crt/g' /etc/openvpn/easy-rsa/keys/$client.ovpn
+    sed -i -e 's/cert client.crt/#cert client.crt/g' /etc/openvpn/easy-rsa/keys/$client.ovpn
+    sed -i -e 's/key client.key/#key client.key/g' /etc/openvpn/easy-rsa/keys/$client.ovpn
 
-  # copy client1.ovpn to /root
-  cp /etc/openvpn/easy-rsa/keys/client1.ovpn /root/client1.ovpn
+    # paste actual certificates into $client.ovpn
+    echo '<ca>' >> /etc/openvpn/easy-rsa/keys/$client.ovpn
+    cat /etc/openvpn/ca.crt >> /etc/openvpn/easy-rsa/keys/$client.ovpn
+    echo '</ca>' >> /etc/openvpn/easy-rsa/keys/$client.ovpn
+    echo '<cert>' >> /etc/openvpn/easy-rsa/keys/$client.ovpn
+    cat /etc/openvpn/easy-rsa/keys/$client.crt >> /etc/openvpn/easy-rsa/keys/$client.ovpn
+    echo '</cert>' >> /etc/openvpn/easy-rsa/keys/$client.ovpn
+    echo '<key>' >> /etc/openvpn/easy-rsa/keys/$client.ovpn
+    cat /etc/openvpn/easy-rsa/keys/$client.key >> /etc/openvpn/easy-rsa/keys/$client.ovpn
+    echo '</key>' >> /etc/openvpn/easy-rsa/keys/$client.ovpn
+
+    # copy client1.ovpn to /root
+    cp /etc/openvpn/easy-rsa/keys/$client.ovpn /root/$client.ovpn
+    
+    # increment $client loop by 1
+    i=$(($i + 1))
+  
+  # complete client certificate generation loop  
+  done 
 
   # script is finished
   echo '========================================================================'
-  echo 'Completed.' 		
-  echo   
+  echo 'Completed.'
+  echo
   echo 'Your client configuration file is in /etc/openvpn/easy-rsa/keys'
-  echo   'It is called "client1.ovpn"'
+  echo   'It is called "client.ovpn"'
   echo
   echo 'Download FileZilla, SCP, or comparable SFTP software to retrieve file'
-  echo   	 	
+  echo
   echo '         -------------------------------------------'
   echo '      Rebooting in 1 minute to complete configuration...'
   echo '         -------------------------------------------'
-  echo 
+  echo
   echo '========================================================================'
   shutdown -r +1
 
 else
   # could not find compatible operating system
   echo '========================================================================'
-  echo 'ERROR. Could not detect compatible operating system...' 		
+  echo 'ERROR. Could not detect compatible operating system...'
   echo '========================================================================'
 
 fi
-
